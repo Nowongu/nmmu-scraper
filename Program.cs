@@ -321,7 +321,14 @@ namespace NMMU_Scraper
 
                     int fromIndex = dataPoint.Content.IndexOf('>') + 1;
                     int toIndex = dataPoint.Content.LastIndexOf('<');
-                    propertyDetails.Add(dataPoint.Content[fromIndex..toIndex]);
+
+                    if (dataPoint.Content.StartsWith("<td align=\"left\">\r\n              <a"))
+                    {
+                        fromIndex = dataPoint.Content.IndexOf("();") + 6;
+                        toIndex = dataPoint.Content.IndexOf("</a>") - 1;
+                    }
+
+                    propertyDetails.Add(dataPoint.Content[fromIndex..toIndex].Trim());
                 }
 
                 if (propertyDetails.Any())

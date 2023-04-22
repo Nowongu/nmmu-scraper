@@ -5,16 +5,17 @@ namespace NMMU_Scraper
 {
     internal class Program
     {
-        public static string? VolumeNo { get; private set; } = string.Empty;
-        public static string? RateNumber { get; private set; } = string.Empty;
-        public static string? StreetNo { get; private set; } = string.Empty;
-        public static string? StreetName { get; private set; } = string.Empty;
-        public static string? Suburb { get; private set; } = string.Empty;
-        public static string? ERF { get; private set; } = string.Empty;
-        public static string? Portion { get; private set; } = string.Empty;
-        public static string? DeedsTown { get; private set; } = string.Empty;
-        public static string? SchemeName { get; private set; } = string.Empty;
-        public static string? SectionNumber { get; private set; } = string.Empty;
+        public static string? VolumeNo { get; private set; }
+        public static string? RateNumber { get; private set; }
+        public static string? StreetNo { get; private set; }
+        public static string? StreetName { get; private set; }
+        public static string? Suburb { get; private set; }
+        public static string? ERF { get; private set; }
+        public static string? Portion { get; private set; }
+        public static string? DeedsTown { get; private set; }
+        public static string? SchemeName { get; private set; }
+        public static string? SectionNumber { get; private set; }
+        public static HttpClient httpClient = new();
 
         static async Task Main(string[] args)
         {
@@ -289,51 +290,66 @@ namespace NMMU_Scraper
                 { "ZWIDE", "12341" },
             };
 
-            Suburb = suburbs["ADCOCKVALE"];
-            var URL =$"https://www.nelsonmandelabay.gov.za/propertyregister/FramePages/SearchResult.aspx?Roll=1&VolumeNo={VolumeNo}&RateNumber={RateNumber}&StreetNo={StreetNo}&StreetName={StreetName}&Suburb={Suburb}&ERF={ERF}&Portion={Portion}&DeedsTown={DeedsTown}&SchemeName={SchemeName}&SectionNumber={SectionNumber}&All=true";
-            HttpClient client = new();
-            var response = await  client.GetAsync(URL);
+            foreach (var suburb in suburbs)
+            {
+                Console.WriteLine($"{suburb.Key} properties:");
+                Suburb = suburb.Value;
+
+                var url = $"https://www.nelsonmandelabay.gov.za/propertyregister/FramePages/SearchResult.aspx?Roll=1&VolumeNo={VolumeNo}&RateNumber={RateNumber}&StreetNo={StreetNo}&StreetName={StreetName}&Suburb={Suburb}&ERF={ERF}&Portion={Portion}&DeedsTown={DeedsTown}&SchemeName={SchemeName}&SectionNumber={SectionNumber}&All=true";
+                var properties = GetPropertiesForSuburb(url);
+
+                await foreach (var property in properties)
+                {
+                    Console.WriteLine(property);
+                }
+            }
+        }
+
+        private static async IAsyncEnumerable<string> GetPropertiesForSuburb(string url)
+        {
+            var response = await httpClient.GetAsync(url);
             var content = await response.Content.ReadAsStringAsync();
             var htmlNodes = Parser.Parse(content, true);
-            var resultTable = htmlNodes.First(x => x.Type == NodeType.table 
-                                            && x.Attributes.TryGetValue("class", out string? classString) 
-                                            && classString.Contains("searchResultTable"));
-                                            
-            var resultTableProperties = htmlNodes.Where(x => x.Type == NodeType.tr
-                                                    && resultTable.OpenPosition < x.OpenPosition
-                                                    && x.ClosedPosition < resultTable.ClosedPosition
-                                                    && x.Depth > resultTable.Depth);
+            var resultTable = htmlNodes.First(x => x.Type == NodeType.table
+                                && x.Attributes.TryGetValue("class", out string? classString)
+                                && classString.Contains("searchResultTable"));
 
-            foreach(var property in resultTableProperties)
+            var resultTableRows = htmlNodes.Where(x => x.Type == NodeType.tr
+                                    && resultTable.OpenPosition < x.OpenPosition
+                                    && x.ClosedPosition < resultTable.ClosedPosition
+                                    && x.Depth > resultTable.Depth);
+
+            foreach (var tableTow in resultTableRows)
             {
-                var dataPoints = htmlNodes.Where(x => x.Type == NodeType.td 
-                                    && property.OpenPosition < x.OpenPosition
-                                    && x.ClosedPosition < property.ClosedPosition
-                                    && x.Depth > property.Depth);
+                var columns = htmlNodes.Where(x => x.Type == NodeType.td
+                                && tableTow.OpenPosition < x.OpenPosition
+                                && tableTow.ClosedPosition > x.ClosedPosition
+                                && x.Depth > tableTow.Depth);
 
                 List<string> propertyDetails = new();
-                foreach (var dataPoint in dataPoints)
+                foreach (var column in columns)
                 {
-                    if (string.IsNullOrWhiteSpace(dataPoint.Content))
+                    if (string.IsNullOrWhiteSpace(column.Content))
                     {
                         break;
                     }
 
-                    int fromIndex = dataPoint.Content.IndexOf('>') + 1;
-                    int toIndex = dataPoint.Content.LastIndexOf('<');
+                    int fromIndex = column.Content.IndexOf('>') + 1;
+                    int toIndex = column.Content.LastIndexOf('<');
 
-                    if (dataPoint.Content.StartsWith("<td align=\"left\">\r\n              <a"))
+                    //fragile way to handle ErfKey and Legal Description, wrapped in anchor tag.
+                    if (column.Content.StartsWith("<td align=\"left\">\r\n              <a"))
                     {
-                        fromIndex = dataPoint.Content.IndexOf("();") + 6;
-                        toIndex = dataPoint.Content.IndexOf("</a>") - 1;
+                        fromIndex = column.Content.IndexOf("();") + 6;
+                        toIndex = column.Content.IndexOf("</a>");
                     }
 
-                    propertyDetails.Add(dataPoint.Content[fromIndex..toIndex].Trim());
+                    propertyDetails.Add(column.Content[fromIndex..toIndex].Trim());
                 }
 
                 if (propertyDetails.Any())
                 {
-                    Console.WriteLine(string.Join(',', propertyDetails));
+                    yield return string.Join(',', propertyDetails);
                 }
             }
         }

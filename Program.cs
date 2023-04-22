@@ -303,7 +303,7 @@ namespace NMMU_Scraper
                     Console.WriteLine(property);
                 }
 
-                await Task.Delay(5000); //don't kill their site by spamming reqquests, should implement explonential backoff.
+                await Task.Delay(5000); //don't kill their site by spamming reqquests, should implement exponential backoff.
             }
         }
 
